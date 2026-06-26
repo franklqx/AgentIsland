@@ -15,6 +15,10 @@ notch**, without switching back to the terminal.
 > Built and battle-tested on a notched MacBook Pro (macOS 14+). Phase 1 (Claude
 > Code, full loop) is solid; Codex is read-only monitoring + jump-to-app.
 
+> 🤖 **Don't want to set it up by hand?** Clone the repo, open it in Claude Code
+> or Codex, and let the agent install it for you — see [DEPLOY.md](DEPLOY.md) for
+> the one-paragraph prompt to paste.
+
 ---
 
 ## Requirements
