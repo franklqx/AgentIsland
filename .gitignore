@@ -1,0 +1,14 @@
+# Build artifacts
+.build/
+AgentIsland.app/
+*.swiftpm
+
+# Agent pet artwork — Anthropic/OpenAI copyrighted. NEVER commit. Each user
+# extracts these locally from their own installed Claude.app / Codex.app
+# via ./extract-pets.sh.
+Assets/pets/
+
+# Backups / OS cruft
+*.bak
+*.agentisland.bak
+.DS_Store
