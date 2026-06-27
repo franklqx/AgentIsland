@@ -55,6 +55,7 @@ def active_transcripts(max_age=900):
 
 
 def context_from(path):
+    """Return (used, model) from the most recent usage block in the tail."""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
@@ -62,8 +63,9 @@ def context_from(path):
                 f.seek(size - TAIL_BYTES); f.readline()
             data = f.read().decode("utf-8", "ignore")
     except Exception:
-        return None
+        return None, None
     used = None
+    model = None
     for line in data.splitlines():
         try:
             m = json.loads(line).get("message")
@@ -73,7 +75,44 @@ def context_from(path):
             u = m["usage"]
             used = (u.get("input_tokens", 0) or 0) + (u.get("cache_creation_input_tokens", 0) or 0) \
                 + (u.get("cache_read_input_tokens", 0) or 0)
-    return used
+            model = m.get("model") or model
+    return used, model
+
+
+# ---- Context window (the denominator) ------------------------------------
+# The transcript carries no context-window field, so we derive it: a per-model
+# base (every shipping Claude model is 200k today) plus auto-promotion to the
+# 1M-token beta the moment a session's usage overflows the base. An explicit
+# AGENTISLAND_CONTEXT_WINDOW override wins (set it to 1000000 if you run the 1M
+# beta and want the right denominator from the start).
+
+BASE_WINDOW = 200_000
+BIG_WINDOW = 1_000_000
+
+# model substring -> base window. All current Claude models are 200k; this
+# table is here so widening it later is a one-line change.
+MODEL_WINDOWS = {}
+
+_session_total = {}   # session_id -> chosen window, sticky (only grows)
+
+
+def base_window(model):
+    env = os.environ.get("AGENTISLAND_CONTEXT_WINDOW", "").strip()
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    name = (model or "").lower()
+    for key, win in MODEL_WINDOWS.items():
+        if key in name:
+            return win
+    return BASE_WINDOW
+
+
+def context_total(sid, model, used):
+    base = base_window(model)
+    total = base if used <= base else BIG_WINDOW   # overflow => 1M beta session
+    total = max(total, _session_total.get(sid, 0))  # sticky: never shrink mid-session
+    _session_total[sid] = total
+    return total
 
 
 # ---- 5-hour / weekly limits (from the oauth/usage endpoint) ---------------
@@ -148,9 +187,9 @@ def main():
     while True:
         for path in active_transcripts():        # per-session context (each chat differs)
             sid = os.path.splitext(os.path.basename(path))[0]
-            used = context_from(path)
+            used, model = context_from(path)
             if used:
-                total = 1_000_000 if used > 200_000 else 200_000
+                total = context_total(sid, model, used)
                 post("/event?kind=context", {"session_id": sid, "agent": "claude",
                                               "context_used": int(used), "context_total": total})
         if i % 15 == 0:                           # account limits ~every 60s
